@@ -4,7 +4,7 @@
 #include "HoughTransform.h"
 
 int main() {
-	cv::Mat img = cv::imread("image6.png");
+	cv::Mat img = cv::imread("image7.png");
 	
 	/*
 	std::vector<cv::Point2f> srcTri(3);
@@ -21,6 +21,7 @@ int main() {
 	*/
 
 	ht::warpImageByDominantOrientation(img);
+	cv::imwrite("result.png", img);
 
 	return 0;
 }

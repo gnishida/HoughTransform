@@ -20,8 +20,6 @@ namespace ht {
 
 		cv::Mat warpMat = cv::getAffineTransform(srcTri, dstTri);
 		cv::warpAffine(image, image, warpMat, image.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(255, 255, 255));
-
-		cv::imwrite("result.png", image);
 	}
 
 	void houghTransform(const cv::Mat& image, const cv::Size& kernel, cv::Mat& accum) {
