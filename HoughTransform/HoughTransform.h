@@ -7,12 +7,16 @@
 namespace ht {
 
 	void warpImageByDominantOrientation(cv::Mat& image);
-	void houghTransform(const cv::Mat& image, cv::Mat& accum);
-	void getDominantOrientation(const cv::Mat& image, float threshold_ratio, const cv::Size& kernel, double& hori, double& vert);
-	float getVerticalOrientation(const cv::Mat& accum, float threshold_ratio, const cv::Size& kernel);
-	float getHorizontalOrientation(const cv::Mat& accum, float threshold_ratio, const cv::Size& kernel);
+	void houghTransform(const cv::Mat& image, const cv::Size& kernel, cv::Mat& accum);
+	void getDominantOrientation(const cv::Mat& image, const cv::Size& kernel, int max_degree, float threshold_ratio, double& hori, double& vert);
+	float getVerticalOrientation(const cv::Mat& accum, int max_degree, float threshold_ratio);
+	float getHorizontalOrientation(const cv::Mat& accum, int max_degree, float threshold_ratio);
+	float getVerticalAccumMax(const cv::Mat& accum, float max_degree);
+	float getHorizontalAccumMax(const cv::Mat& accum, float max_degree);
+	bool isLocalMaximum(const cv::Mat& mat, int r, int c, int size);
+
 	void saveImage(const cv::Mat& image, const std::string& filename);
 	void saveHistogram(const cv::Mat& mat, const std::string& filename);
 
-	void visualizeAccum(const cv::Mat& image, const cv::Mat& accum, float threshold_ratio, const std::string& filename);
+	void visualizeAccum(const cv::Mat& image, const cv::Mat& accum, int max_degree, float threshold_ratio, const std::string& filename);
 }

@@ -7,7 +7,7 @@ namespace ht {
 
 	void warpImageByDominantOrientation(cv::Mat& image) {
 		double hori, vert;
-		ht::getDominantOrientation(image, 0.5, cv::Size(5, 5), hori, vert);
+		ht::getDominantOrientation(image, cv::Size(5, 5), 15, 0.6, hori, vert);
 
 		std::vector<cv::Point2f> srcTri(3);
 		std::vector<cv::Point2f> dstTri(3);
@@ -24,7 +24,7 @@ namespace ht {
 		cv::imwrite("result.png", image);
 	}
 
-	void houghTransform(const cv::Mat& image, cv::Mat& accum) {
+	void houghTransform(const cv::Mat& image, const cv::Size& kernel, cv::Mat& accum) {
 		// convert the image to grayscale
 		cv::Mat grayImg;
 		if (image.channels() == 1) {
@@ -69,71 +69,42 @@ namespace ht {
 	/**
 	 * 指定された画像のエッジを抽出し、水平方向および垂直方向のdominantな角度を返却する。
 	 */
-	void getDominantOrientation(const cv::Mat& image, float threshold_ratio, const cv::Size& kernel, double& hori, double& vert) {
+	void getDominantOrientation(const cv::Mat& image, const cv::Size& kernel, int max_degree, float threshold_ratio, double& hori, double& vert) {
 		cv::Mat accum;
-		houghTransform(image, accum);
+		houghTransform(image, kernel, accum);
 
-		visualizeAccum(image, accum, threshold_ratio, "image_edge.png");
+		visualizeAccum(image, accum, max_degree, threshold_ratio, "image_edge.png");
 
-		//cv::blur(accum, accum, cv::Size(kernel.width, kernel.height));
-		//visualizeAccum(image, accum, "image_edge.png");
-
-		//saveImage(accum, "accum_blur.png");
-
-		vert = getVerticalOrientation(accum, threshold_ratio, kernel);
-		hori = getHorizontalOrientation(accum, threshold_ratio, kernel);
+		vert = getVerticalOrientation(accum, max_degree, threshold_ratio);
+		hori = getHorizontalOrientation(accum, max_degree, threshold_ratio);
 
 		std::cout << "Vert: " << vert << ", Hori: " << hori << std::endl;
 	}
 
-	float getVerticalOrientation(const cv::Mat& accum, float threshold_ratio, const cv::Size& kernel) {
+	float getVerticalOrientation(const cv::Mat& accum, int max_degree, float threshold_ratio) {
 		// find teh maximum value
-		cv::Mat accum_max;
-		cv::reduce(accum, accum_max, 0, CV_REDUCE_MAX);
-
-		float v_max = 0.0f;
-		for (int t = 0; t < 180; ++t) {
-			if (t > 20 && t < 160) continue;
-
-			if (accum_max.at<float>(0, t) > v_max) {
-				v_max = accum_max.at<float>(0, t);
-			}
-		}
+		float v_max = getVerticalAccumMax(accum, max_degree);
 
 		// change the value below the threshold to 0
 		cv::Mat accumV;
 		cv::threshold(accum, accumV, v_max * threshold_ratio, 255, cv::THRESH_TOZERO);
 		for (int r = 0; r < accumV.rows; ++r) {
 			for (int c = 0; c < accumV.cols; ++c) {
-				if (c > 20 && c < 160) accumV.at<float>(r, c) = 0;
+				if (c > max_degree && c < 180 - max_degree) accumV.at<float>(r, c) = 0;
 			}
 		}
 		//saveImage(accumV, "accumV_th.png");
 
 		// clean up the accum by only keeping the local maximum
 		cv::Mat accumV_refined(accumV.size(), CV_32F, cv::Scalar(0.0f));
-
 		for (int r = 0; r < accumV.rows; ++r) {
 			for (int t = 0; t < 180; ++t) {
-				if (t > 20 && t < 160) continue;
+				if (t > max_degree && t < 180 - max_degree) continue;
 				if (accumV.at<float>(r, t) == 0) continue;
-
-				//Is this point a local maxima (9x9)  
-				int max = accumV.at<float>(r, t);
-				for (int ly = -4; ly <= 4; ly++) {
-					for (int lx = -4; lx <= 4; lx++) {
-						if ((ly + r >= 0 && ly + r < accumV.rows) && (lx + t >= 0 && lx + t < accumV.cols)) {
-							if (accumV.at<float>(r + ly, t + lx) > max) {
-								max = accumV.at<float>(r + ly, t + lx);
-								ly = lx = 5;
-							}
-						}
-					}
-				}
-				if (max > accumV.at<float>(r, t)) continue;
-
-				accumV_refined.at<float>(r, t) += accumV.at<float>(r, t);
-				//accumV_refined.at<float>(r, t) += 1.0f;
+				if (!isLocalMaximum(accumV, r, t, 4)) continue;
+				
+				accumV_refined.at<float>(r, t) = accumV.at<float>(r, t);
+				//accumV_refined.at<float>(r, t) = 1.0f;
 			}
 		}
 		//saveImage(accumV_refined, "accumV_refined.png");
@@ -143,13 +114,13 @@ namespace ht {
 		cv::reduce(accumV_refined, accumV_refined, 0, CV_REDUCE_SUM);
 		//saveHistogram(accumV_refined, "accumV_hist.png");
 		v_max = 0.0f;
-		for (int t = 0; t <= 20; ++t) {
+		for (int t = 0; t <= max_degree; ++t) {
 			if (accumV_refined.at<float>(0, t) > v_max) {
 				v_max = accumV_refined.at<float>(0, t);
 				vert = t + 90;
 			}
 		}
-		for (int t = 160; t < 180; ++t) {
+		for (int t = 180 - max_degree; t < 180; ++t) {
 			if (accumV_refined.at<float>(0, t) > v_max) {
 				v_max = accumV_refined.at<float>(0, t);
 				vert = t - 180 + 90;
@@ -159,60 +130,39 @@ namespace ht {
 		return vert;
 	}
 
-	float getHorizontalOrientation(const cv::Mat& accum, float threshold_ratio, const cv::Size& kernel) {
+	float getHorizontalOrientation(const cv::Mat& accum, int max_degree, float threshold_ratio) {
 		// find teh maximum value
-		cv::Mat accum_max;
-		cv::reduce(accum, accum_max, 0, CV_REDUCE_MAX);
-
-		float h_max = 0.0f;
-		for (int t = 70; t <= 110; ++t) {
-			if (accum_max.at<float>(0, t) > h_max) {
-				h_max = accum_max.at<float>(0, t);
-			}
-		}
+		float h_max = getHorizontalAccumMax(accum, max_degree);
 
 		// change the value below the threshold to 0
 		cv::Mat accumH;
 		cv::threshold(accum, accumH, h_max * threshold_ratio, 255, cv::THRESH_TOZERO);
 		for (int r = 0; r < accumH.rows; ++r) {
 			for (int c = 0; c < accumH.cols; ++c) {
-				if (c < 70 || c > 110) accumH.at<float>(r, c) = 0;
+				if (c < 90 - max_degree || c > 90 + max_degree) accumH.at<float>(r, c) = 0;
 			}
 		}
 		//saveImage(accumH, "accumH_th.png");
 
 		// clean up the accum by only keeping the local maximum
 		cv::Mat accumH_refined(accumH.size(), CV_32F, cv::Scalar(0.0f));
-
 		for (int r = 0; r < accumH.rows; ++r) {
-			for (int t = 70; t <= 110; ++t) {
+			for (int t = 90 - max_degree; t <= 90 + max_degree; ++t) {
 				if (accumH.at<float>(r, t) == 0) continue;
+				if (!isLocalMaximum(accumH, r, t, 4)) continue;
 
-				//Is this point a local maxima (9x9)  
-				int max = accumH.at<float>(r, t);
-				for (int ly = -4; ly <= 4; ly++) {
-					for (int lx = -4; lx <= 4; lx++) {
-						if ((ly + r >= 0 && ly + r < accumH.rows) && (lx + t >= 0 && lx + t < accumH.cols)) {
-							if (accumH.at<float>(r + ly, t + lx) > max) {
-								max = accumH.at<float>(r + ly, t + lx);
-								ly = lx = 5;
-							}
-						}
-					}
-				}
-				if (max > accumH.at<float>(r, t)) continue;
-
-				//accumH_refined.at<float>(r, t) += accumV.at<float>(r, t);
-				accumH_refined.at<float>(r, t) += 1.0f;
+				accumH_refined.at<float>(r, t) = accumH.at<float>(r, t);
+				//accumH_refined.at<float>(r, t) = 1.0f;
 			}
 		}
-				
+		//saveImage(accumH_refined, "accumH_refined.png");
+
 		// find the theta that has the maximum value
 		float hori = 0.0f;
 		cv::reduce(accumH_refined, accumH_refined, 0, CV_REDUCE_SUM);
-		//saveHistogram(accumH_refined, "accumH_hist.png");
+		saveHistogram(accumH_refined, "accumH_hist.png");
 		h_max = 0.0f;
-		for (int t = 70; t <= 110; ++t) {
+		for (int t = 90 - max_degree; t <= 90 + max_degree; ++t) {
 			if (accumH_refined.at<float>(0, t) > h_max) {
 				h_max = accumH_refined.at<float>(0, t);
 				hori = t - 90;
@@ -220,6 +170,54 @@ namespace ht {
 		}
 
 		return hori;
+	}
+
+	float getVerticalAccumMax(const cv::Mat& accum, float max_degree) {
+		cv::Mat accum_max;
+		cv::reduce(accum, accum_max, 0, CV_REDUCE_MAX);
+
+		// find the maximum value
+		float v_max = 0.0f;
+		for (int t = 0; t < 180; ++t) {
+			if (t > max_degree && t < 180 - max_degree) continue;
+
+			if (accum_max.at<float>(0, t) > v_max) {
+				v_max = accum_max.at<float>(0, t);
+			}
+		}
+
+		return v_max;
+	}
+
+	float getHorizontalAccumMax(const cv::Mat& accum, float max_degree) {
+		cv::Mat accum_max;
+		cv::reduce(accum, accum_max, 0, CV_REDUCE_MAX);
+
+		// find the maximum value
+		float h_max = 0.0f;
+		for (int t = 90 - max_degree; t <= 90 + max_degree; ++t) {
+			if (accum_max.at<float>(0, t) > h_max) {
+				h_max = accum_max.at<float>(0, t);
+			}
+		}
+
+		return h_max;
+	}
+
+	bool isLocalMaximum(const cv::Mat& mat, int r, int c, int size = 4) {
+		int value = mat.at<float>(r, c);
+
+		for (int ly = -size; ly <= size; ly++) {
+			for (int lx = -size; lx <= size; lx++) {
+				if ((ly + r >= 0 && ly + r < mat.rows) && (lx + c >= 0 && lx + c < mat.cols)) {
+					if (mat.at<float>(r + ly, c + lx) > value) {
+						return false;
+					}
+				}
+			}
+		}
+		
+		return true;
 	}
 
 	void saveImage(const cv::Mat& image, const std::string& filename) {
@@ -258,34 +256,38 @@ namespace ht {
 		cv::imwrite(filename.c_str(), hist);
 	}
 
-	void visualizeAccum(const cv::Mat& image, const cv::Mat& accum, float threshold_ratio, const std::string& filename) {
-		cv::Mat accum_max;
-		cv::reduce(accum, accum_max, 0, CV_REDUCE_MAX);
-		cv::reduce(accum_max, accum_max, 1, CV_REDUCE_MAX);
+	void visualizeAccum(const cv::Mat& image, const cv::Mat& accum, int max_degree, float threshold_ratio, const std::string& filename) {
+		float v_max = getVerticalAccumMax(accum, max_degree);
+		float h_max = getHorizontalAccumMax(accum, max_degree);
 
-		cv::Mat accum_threshold;
-		cv::threshold(accum, accum_threshold, accum_max.at<float>(0, 0) * threshold_ratio, 255, cv::THRESH_TOZERO);
+		// apply threshold
+		cv::Mat accum_threshold = accum.clone();
+		for (int r = 0; r < accum_threshold.rows; ++r) {
+			for (int t = 0; t < 180; ++t) {
+				if (t <= max_degree || t >= 180 - max_degree) {
+					if (accum_threshold.at<float>(r, t) < v_max * threshold_ratio) {
+						accum_threshold.at<float>(r, t) = 0;
+					}
+				}
+				else if (t >= 90 - max_degree && t <= 90 + max_degree) {
+					if (accum_threshold.at<float>(r, t) < h_max * threshold_ratio) {
+						accum_threshold.at<float>(r, t) = 0;
+					}
+				}
+				else {
+					accum_threshold.at<float>(r, t) = 0;
+				}
+			}
+		}
 
+		// visualize the result
 		cv::Mat result = image.clone();
-
 		for (int r = 0; r < accum_threshold.rows; ++r) {
 			for (int t = 0; t < accum_threshold.cols; ++t) {
-				if ((t > 20 && t < 70) || (t > 110 && t < 160)) continue;
+				if ((t > max_degree && t < 90 - max_degree) || (t > 90 + max_degree && t < 180 - max_degree)) continue;
 
 				if (accum_threshold.at<float>(r, t) > 0) {
-					//Is this point a local maxima (9x9)  
-					int max = accum_threshold.at<float>(r, t);
-					for (int ly = -4; ly <= 4; ly++) {
-						for (int lx = -4; lx <= 4; lx++) {
-							if ((ly + r >= 0 && ly + r < accum_threshold.rows) && (lx + t >= 0 && lx + t < accum_threshold.cols)) {
-								if (accum_threshold.at<float>(r + ly, t + lx) > max) {
-									max = accum_threshold.at<float>(r + ly, t + lx);
-									ly = lx = 5;
-								}
-							}
-						}
-					}
-					if (max > accum_threshold.at<float>(r, t)) continue;
+					if (!isLocalMaximum(accum_threshold, r, t, 4)) continue;
 
 					int x1, y1, x2, y2;
 					x1 = y1 = x2 = y2 = 0;

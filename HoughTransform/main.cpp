@@ -4,7 +4,7 @@
 #include "HoughTransform.h"
 
 int main() {
-	cv::Mat img = cv::imread("image5.png");
+	cv::Mat img = cv::imread("image6.png");
 	
 	/*
 	std::vector<cv::Point2f> srcTri(3);
