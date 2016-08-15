@@ -5,9 +5,11 @@ namespace ht {
 
 	const double M_PI = 3.1415926535897932384626433832795;
 
-	void warpImageByDominantOrientation(cv::Mat& image) {
+	float warpImageByDominantOrientation(cv::Mat& image, float true_hori, float true_vert) {
 		double hori, vert;
 		ht::getDominantOrientation(image, cv::Size(5, 5), 15, 0.6, hori, vert);
+
+		std::cout << "Hori: " << hori << " (True: " << true_hori << "), Vert: " << vert << " (True: " << true_vert << "), Error: " << fabs(true_hori - hori) + fabs(true_vert - vert) << std::endl;
 
 		std::vector<cv::Point2f> srcTri(3);
 		std::vector<cv::Point2f> dstTri(3);
@@ -20,6 +22,8 @@ namespace ht {
 
 		cv::Mat warpMat = cv::getAffineTransform(srcTri, dstTri);
 		cv::warpAffine(image, image, warpMat, image.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(255, 255, 255));
+
+		return fabs(true_hori - hori) + fabs(true_vert - vert);
 	}
 
 	void houghTransform(const cv::Mat& image, const cv::Size& kernel, cv::Mat& accum) {
@@ -36,11 +40,12 @@ namespace ht {
 		}
 
 		// blur the image
-		cv::blur(grayImg, grayImg, cv::Size(5, 5));
+		//cv::blur(grayImg, grayImg, cv::Size(5, 5));
 
 		cv::Mat edgeImg;
-		cv::Canny(grayImg, edgeImg, 50, 160, 3);
-		//cv::Canny(grayImg, edgeImg, 100, 150, 3);
+		//cv::Canny(grayImg, edgeImg, 50, 160, 3);
+		cv::Canny(grayImg, edgeImg, 30, 100, 3);
+		//autoCanny2(grayImg, edgeImg);
 
 		cv::imwrite("edge.png", edgeImg);
 		
@@ -68,6 +73,7 @@ namespace ht {
 	 * 指定された画像のエッジを抽出し、水平方向および垂直方向のdominantな角度を返却する。
 	 */
 	void getDominantOrientation(const cv::Mat& image, const cv::Size& kernel, int max_degree, float threshold_ratio, double& hori, double& vert) {
+#if 1
 		cv::Mat accum;
 		houghTransform(image, kernel, accum);
 
@@ -75,8 +81,63 @@ namespace ht {
 
 		vert = getVerticalOrientation(accum, max_degree, threshold_ratio);
 		hori = getHorizontalOrientation(accum, max_degree, threshold_ratio);
+#endif
 
-		std::cout << "Vert: " << vert << ", Hori: " << hori << std::endl;
+#if 0
+		cv::Mat grayImg;
+		cv::cvtColor(image, grayImg, cv::COLOR_BGR2GRAY);
+
+		cv::Mat sobelx;
+		cv::Sobel(grayImg, sobelx, CV_32F, 1, 0, 5);
+		cv::Mat sobely;
+		cv::Sobel(grayImg, sobely, CV_32F, 0, 1, 5);
+
+		cv::imwrite("sobelx.png", abs(sobelx));
+		cv::imwrite("sobely.png", abs(sobely));
+
+		std::vector<float> histogram(180, 0.0f);
+		for (int r = 0; r < image.rows; ++r) {
+			for (int c = 0; c < image.cols; ++c) {
+				float theta = atan2(sobely.at<float>(r, c), sobelx.at<float>(r, c)) + M_PI * 0.5f;
+				float magnitude = sqrtf(sobelx.at<float>(r, c) * sobelx.at<float>(r, c) + sobely.at<float>(r, c) * sobely.at<float>(r, c));
+				if (theta < 0) {
+					theta += M_PI;
+				}
+				else if (theta >= M_PI) {
+					theta -= M_PI;
+				}
+
+				if (theta <= max_degree / 180.0f * M_PI || theta >= (180.0f - max_degree) / 180.0f * M_PI) {
+					histogram[(int)(theta / M_PI * 180.0f)] += magnitude;
+				}
+				else if (theta >= (90.0f - max_degree) / 180.0f * M_PI && theta <= (90.0f + max_degree) / 180.0f * M_PI) {
+					histogram[(int)(theta / M_PI * 180.0f)] += magnitude;
+				}
+			}
+		}
+
+		int vert_max = 0;
+		int hori_max = 0;
+		for (int i = 0; i < 180; ++i) {
+			if (i <= max_degree || i >= 180 - max_degree) {
+				if (histogram[i] > hori_max) {
+					hori_max = histogram[i];
+					if (i <= max_degree) {
+						hori = i;
+					}
+					else {
+						hori = i - 180;
+					}
+				}
+			}
+			else if (i >= 90 - max_degree && i <= 90 + max_degree) {
+				if (histogram[i] > vert_max) {
+					vert_max = histogram[i];
+					vert = i;
+				}
+			}
+		}
+#endif
 	}
 
 	float getVerticalOrientation(const cv::Mat& accum, int max_degree, float threshold_ratio) {
@@ -218,6 +279,46 @@ namespace ht {
 		return true;
 	}
 
+	void autoCanny(const cv::Mat& grayImg, cv::Mat& edgeImg, float sigma) {
+		float v = median(grayImg);
+
+		int lower = std::max(0.0f, (1.0f - sigma) * v);
+		int upper = std::max(255.0f, (1.0f + sigma) * v);
+		std::cout << "mean: " << v << ", threshold1: " << lower << ", threshold2: " << upper << std::endl;
+		cv::Canny(grayImg, edgeImg, lower, upper);
+	}
+
+	void autoCanny2(const cv::Mat& grayImg, cv::Mat& edgeImg, float sigma) {
+		float v = median(grayImg);
+
+		int lower = std::max(0.0f, (1.0f - sigma) * v);
+		int upper = std::max(255.0f, (1.0f + sigma) * v);
+		//std::cout << "mean: " << v << ", threshold1: " << lower << ", threshold2: " << upper << std::endl;
+		cv::Canny(grayImg, edgeImg, v * 0.5, v);
+	}
+
+	double median(const cv::Mat& grayImg) {
+		double m = (grayImg.rows * grayImg.cols) / 2;
+		int bin = 0;
+		double med = -1.0;
+
+		int histSize = 256;
+		float range[] = { 0, 256 };
+		const float* histRange = { range };
+		bool uniform = true;
+		bool accumulate = false;
+		cv::Mat hist;
+		cv::calcHist(&grayImg, 1, 0, cv::Mat(), hist, 1, &histSize, &histRange, uniform, accumulate);
+
+		for (int i = 0; i < histSize && med < 0.0; ++i) {
+			bin += cvRound(hist.at< float >(i));
+			if (bin > m && med < 0.0)
+				med = i;
+		}
+
+		return med;
+	}
+
 	void saveImage(const cv::Mat& image, const std::string& filename) {
 		double minVal;
 		double maxVal;
@@ -302,7 +403,7 @@ namespace ht {
 						y2 = image.rows;
 						x2 = ((double)(r - (accum_threshold.rows / 2)) - ((y2 - (image.rows / 2)) * sin(t / 180.0 * M_PI))) / cos(t / 180.0 * M_PI) + (image.cols / 2);
 					}
-					cv::line(result, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 0, 255), 3);
+					cv::line(result, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 0, 255), 1);
 				}
 			}
 		}

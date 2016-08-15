@@ -2,26 +2,36 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
 #include "HoughTransform.h"
+#include <iostream>
 
 int main() {
-	cv::Mat img = cv::imread("image7.png");
-	
-	/*
-	std::vector<cv::Point2f> srcTri(3);
-	std::vector<cv::Point2f> dstTri(3);
-	srcTri[0] = cv::Point2f(0, 0);
-	srcTri[1] = cv::Point2f(100, 0);
-	srcTri[2] = cv::Point2f(0, 100);
-	dstTri[0] = cv::Point2f(0, 0);
-	dstTri[1] = cv::Point2f(100, -10);
-	dstTri[2] = cv::Point2f(-10, 100);
-	cv::Mat warpMat = cv::getAffineTransform(srcTri, dstTri);
-	cv::warpAffine(img, img, warpMat, img.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(255, 255, 255));
-	cv::imwrite("facade1_warped.png", img);
-	*/
+	int NUM_DATA = 26;
 
-	ht::warpImageByDominantOrientation(img);
+	/*
+	cv::Mat img = cv::imread("../testdata/image12.png");
+	ht::warpImageByDominantOrientation(img, 0, 0);
 	cv::imwrite("result.png", img);
+	*/
+	
+	std::vector<float> horis = { -1, 0, -4, 0, 3, 3, 1, 3, -1, 0, 2, 0, 0, 0, 0, 0, 
+								0, 0, 0, 2, 1, 0, 0, 0, 1, 0 };
+	std::vector<float> verts = { 88, 91, 92, 90, 98, 94, 90, 90, 90, 85, 90, 89, 90, 90, 90, 88, 
+								88, 90, 90, 86, 90, 90, 88, 87, 88, 90 };
+
+	float error = 0.0f;
+	for (int i = 0; i < NUM_DATA; ++i) {
+		char name[256];
+		sprintf(name, "../testdata/image%d.png", i + 1);
+
+		cv::Mat img = cv::imread(name);
+		error += ht::warpImageByDominantOrientation(img, horis[i], verts[i]);
+
+		char name2[256];
+		sprintf(name2, "../results/result%d.png", i + 1);
+		cv::imwrite(name2, img);
+	}
+
+	std::cout << "Avg error: " << error / NUM_DATA << std::endl;
 
 	return 0;
 }
