@@ -264,10 +264,11 @@ namespace ht {
 	}
 
 	bool isLocalMaximum(const cv::Mat& mat, int r, int c, int size = 4) {
-		int value = mat.at<float>(r, c);
+		float value = mat.at<float>(r, c);
 
 		for (int ly = -size; ly <= size; ly++) {
 			for (int lx = -size; lx <= size; lx++) {
+				if (lx == 0 && ly == 0) continue;
 				if ((ly + r >= 0 && ly + r < mat.rows) && (lx + c >= 0 && lx + c < mat.cols)) {
 					if (mat.at<float>(r + ly, c + lx) > value) {
 						return false;
